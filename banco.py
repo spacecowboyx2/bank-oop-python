@@ -1,4 +1,8 @@
 from abc import ABC, abstractmethod
+from datetime import datetime 
+from pathlib import Path
+
+ROOT_PATH = Path(__file__).parent
 
 class Account:
     def __init__(self,client, numberAc) -> None:
@@ -69,7 +73,7 @@ class CurrentAccount(Account):
         self.withdraw_limit = withdrawal_limit
         
     def withdraw(self, value):
-        number_withdrawals = len([transaction for transaction in self._history.transactions if transaction["type"] == Withdrawal.__name__])
+        number_withdrawals = len([transaction for transaction in self._history.transactions if transaction["type"] == "Withdrawal"] )
 
         exceeded_limit = value > self.limit
         exceeded_withdrawals = number_withdrawals > self.withdraw_limit
@@ -87,7 +91,7 @@ class CurrentAccount(Account):
         return f"""
             agencia:\t {self.agency}
             conta:\t {self.numberAc}
-            titular:\t {self._client._name}
+            titular:\t {self._client.name}
 """
     
 class Transaction(ABC):
@@ -139,10 +143,25 @@ class History:
     def add_transaction(self, transaction):
         self._transactions.append(
             {
+                "date": datetime.now().strftime("%d/%m/%Y %H:%M:%S"),
                 "type": transaction.__class__.__name__,
                 "value": transaction.value
             }
         ) 
+
+    def generate_report(self, type = None):
+        for transaction in self.transactions:
+            if type is None or transaction["type"].lower() == type.lower():
+                yield transaction
+
+    def daily_transactions(self):
+        currentDate = datetime.now().date()
+        transactions = []
+        for transaction in self.transactions:
+            transactionDate = datetime.strptime(transaction["date"], "%d/%m/%Y %H:%M:%S").date()
+            if currentDate == transactionDate:
+                transactions.append(transaction)
+        return transactions
 
 class Client:
     def __init__(self, address) -> None:
@@ -151,6 +170,9 @@ class Client:
 
 
     def do_transaction(self, account, transaction):
+        if len(account.history.daily_transactions()) >= 10:
+            print("daily transactions exceeded")
+            return
         transaction.register_transaction(account)
 
     def add_account(self,account):
@@ -191,6 +213,24 @@ def recovery_client_account(client):
         return
     return client.accounts[0]
 
+def log_transaction(func):
+    def wrapper(*args, **kwargs):
+        result = func(*args, **kwargs)
+        date = datetime.now().strftime("%m/%d/%Y %H:%M:%S")
+        try:
+            with open(ROOT_PATH / "log.txt","a") as file:
+                file.write(f"[{date}] {func.__name__} ")
+
+        except Exception as e:
+            print("a error occurred: ", e)
+
+
+        print(f"{datetime.now()}: {func.__name__}")
+        return result
+    return wrapper
+
+
+@log_transaction
 def deposit(clients):
     cpf = input("CPF: ")
     client = filter_client(cpf, clients)
@@ -208,7 +248,7 @@ def deposit(clients):
     
     client.do_transaction(account, transaction)
 
-
+@log_transaction
 def withdrawal(clients):
     cpf = input("CPF: ")
     client = filter_client(cpf, clients)
@@ -225,7 +265,7 @@ def withdrawal(clients):
         return
     client.do_transaction(account, transaction)
 
-
+@log_transaction
 def show_statememt(clients):
     cpf = input("CPF: ")
     client = filter_client(cpf, clients)
@@ -246,7 +286,7 @@ def show_statememt(clients):
         print("No bank transactions were carried out")
     else:
         for transaction in transactions:
-            statement += f"\n{transaction['type']} \n{transaction['value']}"
+            statement += f"\n{transaction['date']}\n{transaction['type']} \n{transaction['value']}"
     print(f"{statement}\nBalance: {account.blnc}")
 
 def create_client(clients):
@@ -281,9 +321,6 @@ def create_account(numberAc, clients, accounts):
     accounts.append(account)
     client.accounts.append(account)
     print("Account created sucessfully")
-
-
-
 
 
 def main():
